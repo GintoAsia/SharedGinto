@@ -19,7 +19,12 @@ function onOpen() {
       .addItem('2. Refresh Dropdowns (Internal)', 'updateSettingsDropdowns'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Step 2: Scheduling')
-      .addItem('Create/Reset Calendar', 'setupCalendar'))
+      .addItem('Create/Reset Calendar', 'setupCalendar')
+      .addSeparator()
+      .addItem('📅 Bulk Assign Shifts (Pattern-Based)', 'bulkAssignShifts')
+      .addItem('🏢 Assign Shifts by Department', 'assignByDepartment')
+      .addItem('📋 Copy Week Pattern', 'copyWeekPattern')
+      .addItem('🗑️ Clear Calendar', 'clearCalendar'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Step 3: Export')
       .addItem('Process Calendar to SQL', 'processCalendar')
@@ -225,6 +230,480 @@ function setupCalendar() {
   if (maxCols > headers.length + 1) cal.hideColumns(headers.length + 2, maxCols - (headers.length + 1));
 
   ui.alert("Calendar created!\n\nTip: Select the grid > Data Validation > Enable 'Chip' & 'Multi-select'.");
+}
+
+// ==========================================
+//      BULK SCHEDULING FUNCTIONS
+// ==========================================
+
+/**
+ * Bulk assign shifts using a pattern-based dialog.
+ * Users can specify which days of the week to fill and the shift to assign.
+ */
+function bulkAssignShifts() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  
+  if (!cal || cal.getLastRow() < 2) {
+    ui.alert('Error', 'Please create a calendar first using "Create/Reset Calendar".', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Get available shifts from Settings
+  const settings = ss.getSheetByName(SETTINGS_SHEET);
+  const shiftData = settings.getRange("A35:A100").getValues().flat().filter(s => s !== "");
+  if (shiftData.length === 0) {
+    ui.alert('Error', 'No shifts defined in Settings. Please define shifts first.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Get employees from the calendar
+  const employees = cal.getRange(2, 1, cal.getLastRow() - 1, 1).getValues().flat().filter(e => e !== "");
+  if (employees.length === 0) {
+    ui.alert('Error', 'No employees found in the calendar.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Build HTML dialog for user-friendly selection
+  const htmlTemplate = HtmlService.createHtmlOutput(buildBulkAssignDialog(shiftData, employees))
+    .setWidth(500)
+    .setHeight(600);
+  ui.showModalDialog(htmlTemplate, '📅 Bulk Assign Shifts');
+}
+
+/**
+ * Builds the HTML content for the bulk assign dialog
+ */
+function buildBulkAssignDialog(shifts, employees) {
+  const shiftOptions = shifts.map(s => `<option value="${s}">${s}</option>`).join('');
+  const employeeCheckboxes = employees.map((e, i) => 
+    `<label class="employee-item"><input type="checkbox" name="emp" value="${i}" checked> ${e}</label>`
+  ).join('');
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 15px; }
+    .section { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+    .section-title { font-weight: bold; color: #1c4587; margin-bottom: 10px; }
+    select, input[type="date"] { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+    .day-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; }
+    .day-checkboxes label { 
+      padding: 8px 12px; background: #e8f0fe; border-radius: 4px; cursor: pointer;
+      border: 2px solid transparent; transition: all 0.2s;
+    }
+    .day-checkboxes label:has(input:checked) { background: #1c4587; color: white; }
+    .day-checkboxes input { display: none; }
+    .employee-list { max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px; }
+    .employee-item { display: block; padding: 3px 0; }
+    .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+    button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #1c4587; color: white; }
+    .btn-secondary { background: #f1f3f4; color: #333; }
+    .btn-select { background: #38761d; color: white; font-size: 12px; padding: 5px 10px; }
+  </style>
+</head>
+<body>
+  <div class="section">
+    <div class="section-title">1. Select Shift</div>
+    <select id="shift">${shiftOptions}</select>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">2. Select Days of Week</div>
+    <div class="day-checkboxes">
+      <label><input type="checkbox" name="day" value="1" checked> Mon</label>
+      <label><input type="checkbox" name="day" value="2" checked> Tue</label>
+      <label><input type="checkbox" name="day" value="3" checked> Wed</label>
+      <label><input type="checkbox" name="day" value="4" checked> Thu</label>
+      <label><input type="checkbox" name="day" value="5" checked> Fri</label>
+      <label><input type="checkbox" name="day" value="6"> Sat</label>
+      <label><input type="checkbox" name="day" value="0"> Sun</label>
+    </div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button type="button" class="btn-select" onclick="selectWeekdays()">Weekdays Only</button>
+      <button type="button" class="btn-select" onclick="selectWeekends()">Weekends Only</button>
+      <button type="button" class="btn-select" onclick="selectAll('day')">All Days</button>
+    </div>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">3. Date Range (Optional)</div>
+    <label>Start: <input type="date" id="startDate"></label>
+    <label>End: <input type="date" id="endDate"></label>
+    <p style="font-size: 12px; color: #666;">Leave blank to use entire calendar range.</p>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">4. Select Employees</div>
+    <div class="btn-row">
+      <button type="button" class="btn-select" onclick="selectAll('emp')">Select All</button>
+      <button type="button" class="btn-select" onclick="deselectAll('emp')">Deselect All</button>
+    </div>
+    <div class="employee-list">${employeeCheckboxes}</div>
+  </div>
+  
+  <div class="btn-row">
+    <button class="btn-primary" onclick="apply()">Apply Shifts</button>
+    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
+  </div>
+  
+  <script>
+    function selectWeekdays() {
+      document.querySelectorAll('input[name="day"]').forEach(cb => {
+        cb.checked = ['1','2','3','4','5'].includes(cb.value);
+      });
+    }
+    function selectWeekends() {
+      document.querySelectorAll('input[name="day"]').forEach(cb => {
+        cb.checked = ['0','6'].includes(cb.value);
+      });
+    }
+    function selectAll(name) {
+      document.querySelectorAll('input[name="' + name + '"]').forEach(cb => cb.checked = true);
+    }
+    function deselectAll(name) {
+      document.querySelectorAll('input[name="' + name + '"]').forEach(cb => cb.checked = false);
+    }
+    function apply() {
+      const shift = document.getElementById('shift').value;
+      const days = Array.from(document.querySelectorAll('input[name="day"]:checked')).map(cb => parseInt(cb.value));
+      const empIndices = Array.from(document.querySelectorAll('input[name="emp"]:checked')).map(cb => parseInt(cb.value));
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      
+      if (days.length === 0) { alert('Please select at least one day.'); return; }
+      if (empIndices.length === 0) { alert('Please select at least one employee.'); return; }
+      
+      google.script.run
+        .withSuccessHandler(() => {
+          alert('Shifts assigned successfully!');
+          google.script.host.close();
+        })
+        .withFailureHandler((err) => alert('Error: ' + err.message))
+        .applyBulkShifts(shift, days, empIndices, startDate, endDate);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Server-side function to apply bulk shifts based on user selection.
+ */
+function applyBulkShifts(shift, days, empIndices, startDate, endDate) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  const headers = cal.getRange(1, 1, 1, cal.getLastColumn()).getValues()[0];
+  const tz = ss.getSpreadsheetTimeZone();
+  
+  // Determine date range
+  let startCol = 2;
+  let endCol = headers.length;
+  
+  if (startDate) {
+    const sd = new Date(startDate);
+    for (let c = 2; c <= headers.length; c++) {
+      const headerDate = new Date(headers[c - 1]);
+      if (headerDate >= sd) { startCol = c; break; }
+    }
+  }
+  if (endDate) {
+    const ed = new Date(endDate);
+    for (let c = headers.length; c >= 2; c--) {
+      const headerDate = new Date(headers[c - 1]);
+      if (headerDate <= ed) { endCol = c; break; }
+    }
+  }
+  
+  // Apply shifts
+  let count = 0;
+  for (const empIdx of empIndices) {
+    const row = empIdx + 2; // +2 because empIdx is 0-based and row 1 is header
+    
+    for (let col = startCol; col <= endCol; col++) {
+      const headerDate = new Date(headers[col - 1]);
+      const dayOfWeek = headerDate.getDay();
+      
+      if (days.includes(dayOfWeek)) {
+        const cell = cal.getRange(row, col);
+        const currentVal = cell.getValue();
+        // Append shift if cell already has a value, otherwise set it
+        if (currentVal && currentVal !== "") {
+          const existingShifts = currentVal.toString().split(',').map(s => s.trim());
+          if (!existingShifts.includes(shift)) {
+            cell.setValue(existingShifts.concat(shift).join(', '));
+            count++;
+          }
+        } else {
+          cell.setValue(shift);
+          count++;
+        }
+      }
+    }
+  }
+  
+  return count;
+}
+
+/**
+ * Assign shifts to employees by department.
+ */
+function assignByDepartment() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  const empSheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  
+  if (!cal || cal.getLastRow() < 2) {
+    ui.alert('Error', 'Please create a calendar first.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Get departments from employee data
+  const empData = empSheet.getDataRange().getValues().slice(1);
+  const departments = [...new Set(empData.map(r => r[2]).filter(d => d))];
+  
+  if (departments.length === 0) {
+    ui.alert('Error', 'No departments found. Please refresh employee data.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Get shifts
+  const settings = ss.getSheetByName(SETTINGS_SHEET);
+  const shiftData = settings.getRange("A35:A100").getValues().flat().filter(s => s !== "");
+  
+  if (shiftData.length === 0) {
+    ui.alert('Error', 'No shifts defined.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  const htmlTemplate = HtmlService.createHtmlOutput(buildDepartmentDialog(shiftData, departments))
+    .setWidth(450)
+    .setHeight(400);
+  ui.showModalDialog(htmlTemplate, '🏢 Assign Shifts by Department');
+}
+
+/**
+ * Builds the HTML content for the department assignment dialog
+ */
+function buildDepartmentDialog(shifts, departments) {
+  const shiftOptions = shifts.map(s => `<option value="${s}">${s}</option>`).join('');
+  const deptOptions = departments.map(d => `<option value="${d}">${d}</option>`).join('');
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 15px; }
+    .section { margin-bottom: 20px; }
+    .section-title { font-weight: bold; color: #1c4587; margin-bottom: 8px; }
+    select { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+    .day-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .day-checkboxes label { 
+      padding: 8px 12px; background: #e8f0fe; border-radius: 4px; cursor: pointer;
+      border: 2px solid transparent;
+    }
+    .day-checkboxes label:has(input:checked) { background: #1c4587; color: white; }
+    .day-checkboxes input { display: none; }
+    .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+    button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+    .btn-primary { background: #1c4587; color: white; }
+    .btn-secondary { background: #f1f3f4; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="section">
+    <div class="section-title">1. Select Department</div>
+    <select id="dept">${deptOptions}</select>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">2. Select Shift</div>
+    <select id="shift">${shiftOptions}</select>
+  </div>
+  
+  <div class="section">
+    <div class="section-title">3. Select Days of Week</div>
+    <div class="day-checkboxes">
+      <label><input type="checkbox" name="day" value="1" checked> Mon</label>
+      <label><input type="checkbox" name="day" value="2" checked> Tue</label>
+      <label><input type="checkbox" name="day" value="3" checked> Wed</label>
+      <label><input type="checkbox" name="day" value="4" checked> Thu</label>
+      <label><input type="checkbox" name="day" value="5" checked> Fri</label>
+      <label><input type="checkbox" name="day" value="6"> Sat</label>
+      <label><input type="checkbox" name="day" value="0"> Sun</label>
+    </div>
+  </div>
+  
+  <div class="btn-row">
+    <button class="btn-primary" onclick="apply()">Apply to Department</button>
+    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
+  </div>
+  
+  <script>
+    function apply() {
+      const dept = document.getElementById('dept').value;
+      const shift = document.getElementById('shift').value;
+      const days = Array.from(document.querySelectorAll('input[name="day"]:checked')).map(cb => parseInt(cb.value));
+      
+      if (days.length === 0) { alert('Please select at least one day.'); return; }
+      
+      google.script.run
+        .withSuccessHandler((count) => {
+          alert('Assigned ' + count + ' shifts to department: ' + dept);
+          google.script.host.close();
+        })
+        .withFailureHandler((err) => alert('Error: ' + err.message))
+        .applyDepartmentShifts(dept, shift, days);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Server-side function to apply shifts to a department.
+ */
+function applyDepartmentShifts(department, shift, days) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  const empSheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  
+  // Get employees in the department
+  const empData = empSheet.getDataRange().getValues().slice(1);
+  const deptEmployees = empData.filter(r => r[2] === department).map(r => r[1]);
+  
+  // Get calendar employee list
+  const calEmployees = cal.getRange(2, 1, cal.getLastRow() - 1, 1).getValues().flat();
+  const empIndices = [];
+  
+  calEmployees.forEach((emp, idx) => {
+    if (deptEmployees.includes(emp)) {
+      empIndices.push(idx);
+    }
+  });
+  
+  if (empIndices.length === 0) {
+    throw new Error('No employees from this department found in the calendar.');
+  }
+  
+  return applyBulkShifts(shift, days, empIndices, '', '');
+}
+
+/**
+ * Copy a week's pattern and repeat it across the calendar.
+ */
+function copyWeekPattern() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  
+  if (!cal || cal.getLastRow() < 2) {
+    ui.alert('Error', 'Please create a calendar first.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Get the source week start date
+  const response = ui.prompt(
+    'Copy Week Pattern',
+    'Enter the Monday date of the week to copy (YYYY-MM-DD):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+  
+  const sourceMonday = new Date(response.getResponseText());
+  if (isNaN(sourceMonday.getTime()) || sourceMonday.getDay() !== 1) {
+    ui.alert('Error', 'Please enter a valid Monday date (YYYY-MM-DD).', ui.ButtonSet.OK);
+    return;
+  }
+  
+  const headers = cal.getRange(1, 1, 1, cal.getLastColumn()).getValues()[0];
+  const employees = cal.getRange(2, 1, cal.getLastRow() - 1, 1).getValues().flat();
+  const tz = ss.getSpreadsheetTimeZone();
+  
+  // Find source week columns (Monday to Sunday)
+  let sourceStartCol = -1;
+  for (let c = 1; c < headers.length; c++) {
+    const headerDate = new Date(headers[c]);
+    const headerStr = Utilities.formatDate(headerDate, tz, 'yyyy-MM-dd');
+    const sourceStr = Utilities.formatDate(sourceMonday, tz, 'yyyy-MM-dd');
+    if (headerStr === sourceStr) {
+      sourceStartCol = c + 1; // +1 because column index is 1-based
+      break;
+    }
+  }
+  
+  if (sourceStartCol === -1) {
+    ui.alert('Error', 'Source week not found in the calendar.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Read source week data (7 days or less if near end of calendar)
+  const lastCol = cal.getLastColumn();
+  const sourceDays = Math.min(7, lastCol - sourceStartCol + 1);
+  const sourceData = cal.getRange(2, sourceStartCol, employees.length, sourceDays).getValues();
+  
+  // Apply to all other weeks
+  let weeksUpdated = 0;
+  
+  for (let col = 2; col <= lastCol; col++) {
+    const headerDate = new Date(headers[col - 1]);
+    if (headerDate.getDay() === 1 && col !== sourceStartCol) {
+      // This is a Monday - copy the week pattern
+      const targetDays = Math.min(sourceDays, lastCol - col + 1);
+      const targetRange = cal.getRange(2, col, employees.length, targetDays);
+      const targetData = [];
+      
+      for (let row = 0; row < employees.length; row++) {
+        const weekRow = [];
+        for (let day = 0; day < targetDays; day++) {
+          weekRow.push(sourceData[row][day] || '');
+        }
+        targetData.push(weekRow);
+      }
+      
+      targetRange.setValues(targetData);
+      weeksUpdated++;
+    }
+  }
+  
+  ui.alert('Success', `Copied week pattern to ${weeksUpdated} other weeks.`, ui.ButtonSet.OK);
+}
+
+/**
+ * Clear all shift assignments from the calendar.
+ */
+function clearCalendar() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  
+  if (!cal || cal.getLastRow() < 2) {
+    ui.alert('Error', 'No calendar found.', ui.ButtonSet.OK);
+    return;
+  }
+  
+  const confirm = ui.alert(
+    'Clear Calendar',
+    'This will remove all shift assignments from the calendar. Are you sure?',
+    ui.ButtonSet.YES_NO
+  );
+  
+  if (confirm !== ui.Button.YES) return;
+  
+  const lastRow = cal.getLastRow();
+  const lastCol = cal.getLastColumn();
+  
+  if (lastRow > 1 && lastCol > 1) {
+    cal.getRange(2, 2, lastRow - 1, lastCol - 1).clearContent();
+    ui.alert('Success', 'Calendar cleared.', ui.ButtonSet.OK);
+  }
 }
 
 // --- 4. PROCESS TO SQL ---
