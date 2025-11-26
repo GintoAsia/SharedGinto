@@ -644,23 +644,25 @@ function copyWeekPattern() {
     return;
   }
   
-  // Read source week data (7 days)
-  const sourceData = cal.getRange(2, sourceStartCol, employees.length, 7).getValues();
+  // Read source week data (7 days or less if near end of calendar)
+  const lastCol = cal.getLastColumn();
+  const sourceDays = Math.min(7, lastCol - sourceStartCol + 1);
+  const sourceData = cal.getRange(2, sourceStartCol, employees.length, sourceDays).getValues();
   
   // Apply to all other weeks
   let weeksUpdated = 0;
-  const lastCol = cal.getLastColumn();
   
   for (let col = 2; col <= lastCol; col++) {
     const headerDate = new Date(headers[col - 1]);
     if (headerDate.getDay() === 1 && col !== sourceStartCol) {
       // This is a Monday - copy the week pattern
-      const targetRange = cal.getRange(2, col, employees.length, Math.min(7, lastCol - col + 1));
+      const targetDays = Math.min(sourceDays, lastCol - col + 1);
+      const targetRange = cal.getRange(2, col, employees.length, targetDays);
       const targetData = [];
       
       for (let row = 0; row < employees.length; row++) {
         const weekRow = [];
-        for (let day = 0; day < Math.min(7, lastCol - col + 1); day++) {
+        for (let day = 0; day < targetDays; day++) {
           weekRow.push(sourceData[row][day] || '');
         }
         targetData.push(weekRow);
