@@ -21,12 +21,11 @@ function onOpen() {
     .addSubMenu(ui.createMenu('Step 2: Scheduling')
       .addItem('Create/Reset Calendar', 'setupCalendar')
       .addSeparator()
-      .addItem('📅 Bulk Assign Shifts (Pattern-Based)', 'bulkAssignShifts')
       .addItem('🏢 Assign Shifts by Department', 'assignByDepartment')
-      .addItem('📋 Copy Week Pattern', 'copyWeekPattern')
       .addItem('🗑️ Clear Calendar', 'clearCalendar')
       .addSeparator()
-      .addItem('✅ Validate Calendar Shifts', 'validateCalendarShifts'))
+      .addItem('✅ Validate Calendar Shifts', 'validateCalendarShifts')
+      .addItem('🧹 Cleanup Sheet', 'cleanupSheet'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Step 3: Export')
       .addItem('Process Calendar to SQL', 'processCalendar')
@@ -164,7 +163,7 @@ function updateSettingsDropdowns() {
   SpreadsheetApp.getUi().alert("Dropdowns updated! Check your Shift Definitions table.");
 }
 
-// --- 3. SETUP CALENDAR (Dates on Y-axis, Employees on X-axis) ---
+// --- 3. SETUP CALENDAR (Dates on Y-axis, Employees on X-axis, Sorted by Department) ---
 function setupCalendar() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
@@ -173,7 +172,7 @@ function setupCalendar() {
   if (!cal) cal = ss.insertSheet(CALENDAR_SHEET);
   else { cal.clear(); if(cal.getFilter()) cal.getFilter().remove(); }
   
-  cal.setTabColor("#f1c232");
+  cal.setTabColor("#6d28d9"); // Modern purple
 
   const startStr = ui.prompt("Start Date (YYYY-MM-01)", "2025-08-01", ui.ButtonSet.OK).getResponseText();
   const endStr = ui.prompt("End Date (YYYY-MM-01)", "2026-07-01", ui.ButtonSet.OK).getResponseText();
@@ -187,10 +186,29 @@ function setupCalendar() {
 
   const empSheet = ss.getSheetByName(EMPLOYEE_SHEET);
   if (empSheet.getLastRow() < 2) { ui.alert("No employees found."); return; }
-  const employees = empSheet.getRange(2, 2, empSheet.getLastRow()-1, 1).getValues().flat();
+  
+  // Get employees with their departments for sorting
+  const empData = empSheet.getRange(2, 2, empSheet.getLastRow()-1, 2).getValues(); // [Name, Department]
+  
+  // Sort by department first, then by name (employees already sorted from refreshEmployeeData)
+  empData.sort((a, b) => {
+    const deptA = a[1] || "ZZZ"; // Fallback for empty departments
+    const deptB = b[1] || "ZZZ";
+    if (deptA < deptB) return -1;
+    if (deptA > deptB) return 1;
+    if (a[0] < b[0]) return -1;
+    if (a[0] > b[0]) return 1;
+    return 0;
+  });
+  
+  const employees = empData.map(e => e[0]);
+  const departments = empData.map(e => e[1] || "No Department");
 
   // Build headers: Date column + employee columns
   const headers = ['Date'].concat(employees);
+  
+  // Build department row for sub-header
+  const deptRow = ['Department'].concat(departments);
   
   // Build date rows
   const dates = [];
@@ -201,39 +219,76 @@ function setupCalendar() {
   }
   
   // Resize Sheet (dates on rows, employees on columns)
-  const reqRows = dates.length + 10;
+  const reqRows = dates.length + 15;
   const reqCols = headers.length + 5;
   if (cal.getMaxRows() < reqRows) cal.insertRowsAfter(cal.getMaxRows(), reqRows - cal.getMaxRows());
   if (cal.getMaxColumns() < reqCols) cal.insertColumnsAfter(cal.getMaxColumns(), reqCols - cal.getMaxColumns());
 
   cal.setHiddenGridlines(true);
 
-  // Headers (Date + Employee names)
-  cal.getRange(1, 1, 1, headers.length).setValues([headers])
-     .setFontWeight('bold').setBackground('#1c4587').setFontColor('white')
-     .setBorder(true, true, true, true, true, true, 'black', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  // Row 1: Department headers (modern gradient style)
+  cal.getRange(1, 1, 1, headers.length).setValues([deptRow])
+     .setFontWeight('bold')
+     .setFontSize(9)
+     .setBackground('#f3e8ff') // Light purple
+     .setFontColor('#6d28d9')
+     .setHorizontalAlignment('center')
+     .setBorder(true, true, true, true, true, true, '#c4b5fd', SpreadsheetApp.BorderStyle.SOLID);
   
-  // Date column (Y-axis)
+  // Row 2: Employee name headers (modern dark style)
+  cal.getRange(2, 1, 1, headers.length).setValues([headers])
+     .setFontWeight('bold')
+     .setFontSize(10)
+     .setBackground('#1e1b4b') // Deep indigo
+     .setFontColor('white')
+     .setHorizontalAlignment('center')
+     .setBorder(true, true, true, true, true, true, '#312e81', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  
+  // Date column (Y-axis) - modern minimal style
   const dateRows = dates.map(d => [d]);
-  cal.getRange(2, 1, dateRows.length, 1).setValues(dateRows)
-     .setFontWeight('bold').setBackground('#f3f3f3')
-     .setBorder(true, true, true, true, true, true, '#999999', SpreadsheetApp.BorderStyle.SOLID);
+  cal.getRange(3, 1, dateRows.length, 1).setValues(dateRows)
+     .setFontWeight('medium')
+     .setFontSize(10)
+     .setBackground('#fafafa')
+     .setFontColor('#374151')
+     .setHorizontalAlignment('center')
+     .setBorder(true, true, true, true, true, true, '#e5e7eb', SpreadsheetApp.BorderStyle.SOLID);
 
-  // Grid (dates as rows, employees as columns)
-  const gridRange = cal.getRange(2, 2, dates.length, employees.length);
+  // Grid (dates as rows, employees as columns) - clean modern style
+  const gridRange = cal.getRange(3, 2, dates.length, employees.length);
   gridRange.setDataValidation(rule)
-     .setBorder(true, true, true, true, true, true, '#cccccc', SpreadsheetApp.BorderStyle.SOLID); 
+     .setBackground('#ffffff')
+     .setFontSize(9)
+     .setHorizontalAlignment('center')
+     .setBorder(true, true, true, true, true, true, '#e5e7eb', SpreadsheetApp.BorderStyle.DOTTED);
+  
+  // Alternate row colors for better readability
+  for (let i = 0; i < dates.length; i++) {
+    if (i % 2 === 0) {
+      cal.getRange(3 + i, 2, 1, employees.length).setBackground('#f9fafb');
+    }
+  }
+  
+  // Highlight weekends with subtle color
+  const tz = ss.getSpreadsheetTimeZone();
+  for (let i = 0; i < dates.length; i++) {
+    const rowDate = new Date(dates[i]);
+    const dayOfWeek = rowDate.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      cal.getRange(3 + i, 1, 1, headers.length).setBackground('#fef3c7'); // Amber tint for weekends
+    }
+  }
   
   cal.setFrozenColumns(1);
-  cal.setFrozenRows(1);
+  cal.setFrozenRows(2);
   cal.autoResizeColumn(1);
-  cal.setColumnWidths(2, employees.length, 120);
+  cal.setColumnWidths(2, employees.length, 100);
   
   // Hide unused columns
   const maxCols = cal.getMaxColumns();
   if (maxCols > headers.length + 1) cal.hideColumns(headers.length + 2, maxCols - (headers.length + 1));
 
-  ui.alert("Calendar created!\n\nTip: Select the grid > Data Validation > Enable 'Chip' & 'Multi-select'.");
+  ui.alert("📅 Calendar created!\n\n✅ Employees sorted by Department\n✅ Weekend rows highlighted\n\nTip: Select the grid > Data Validation > Enable 'Chip' & 'Multi-select'.");
 }
 
 // ==========================================
@@ -256,14 +311,14 @@ function getValidShifts() {
 /**
  * Validate all shifts in the calendar against the Settings sheet.
  * Reports any shifts that are used but not defined in Settings.
- * Calendar layout: dates on Y-axis (rows), employees on X-axis (columns).
+ * Calendar layout: Row 1 = Departments, Row 2 = Employee Names, Row 3+ = Data
  */
 function validateCalendarShifts() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   const cal = ss.getSheetByName(CALENDAR_SHEET);
   
-  if (!cal || cal.getLastRow() < 2) {
+  if (!cal || cal.getLastRow() < 3) {
     ui.alert('Error', 'No calendar found. Please create a calendar first.', ui.ButtonSet.OK);
     return;
   }
@@ -279,14 +334,14 @@ function validateCalendarShifts() {
   
   // Get calendar data
   const data = cal.getDataRange().getValues();
-  const employeeHeaders = data[0].slice(1);
+  const employeeHeaders = data[1].slice(1); // Row 2 (index 1) has employee names
   
   const invalidShifts = new Map(); // Map of invalid shift -> array of locations
   let totalCellsChecked = 0;
   let totalInvalidCells = 0;
   
-  // Iterate through the calendar (dates as rows, employees as columns)
-  for (let r = 1; r < data.length; r++) {
+  // Iterate through the calendar (dates as rows starting from row 3, employees as columns)
+  for (let r = 2; r < data.length; r++) {
     const dateStr = data[r][0];
     
     for (let c = 1; c < data[r].length; c++) {
@@ -418,239 +473,21 @@ function clearShiftHighlights() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const cal = ss.getSheetByName(CALENDAR_SHEET);
   
-  if (!cal || cal.getLastRow() < 2) return;
+  if (!cal || cal.getLastRow() < 3) return;
   
   const lastRow = cal.getLastRow();
   const lastCol = cal.getLastColumn();
   
-  if (lastRow > 1 && lastCol > 1) {
-    const gridRange = cal.getRange(2, 2, lastRow - 1, lastCol - 1);
+  if (lastRow > 2 && lastCol > 1) {
+    const gridRange = cal.getRange(3, 2, lastRow - 2, lastCol - 1);
     gridRange.setBackground(null);
     gridRange.clearNote();
   }
 }
 
 // ==========================================
-//      BULK SCHEDULING FUNCTIONS
+//      DEPARTMENT SCHEDULING FUNCTIONS
 // ==========================================
-
-/**
- * Bulk assign shifts using a pattern-based dialog.
- * Users can specify which days of the week to fill and the shift to assign.
- * Note: Calendar layout has dates on Y-axis (rows) and employees on X-axis (columns).
- */
-function bulkAssignShifts() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const cal = ss.getSheetByName(CALENDAR_SHEET);
-  
-  if (!cal || cal.getLastRow() < 2) {
-    ui.alert('Error', 'Please create a calendar first using "Create/Reset Calendar".', ui.ButtonSet.OK);
-    return;
-  }
-  
-  // Get available shifts from Settings
-  const settings = ss.getSheetByName(SETTINGS_SHEET);
-  const shiftData = settings.getRange("A35:A100").getValues().flat().filter(s => s !== "");
-  if (shiftData.length === 0) {
-    ui.alert('Error', 'No shifts defined in Settings. Please define shifts first.', ui.ButtonSet.OK);
-    return;
-  }
-  
-  // Get employees from the calendar headers (now on X-axis, starting from column 2)
-  const headers = cal.getRange(1, 1, 1, cal.getLastColumn()).getValues()[0];
-  const employees = headers.slice(1).filter(e => e !== "");
-  if (employees.length === 0) {
-    ui.alert('Error', 'No employees found in the calendar.', ui.ButtonSet.OK);
-    return;
-  }
-  
-  // Build HTML dialog for user-friendly selection
-  const htmlTemplate = HtmlService.createHtmlOutput(buildBulkAssignDialog(shiftData, employees))
-    .setWidth(500)
-    .setHeight(600);
-  ui.showModalDialog(htmlTemplate, '📅 Bulk Assign Shifts');
-}
-
-/**
- * Builds the HTML content for the bulk assign dialog
- */
-function buildBulkAssignDialog(shifts, employees) {
-  const shiftOptions = shifts.map(s => `<option value="${s}">${s}</option>`).join('');
-  const employeeCheckboxes = employees.map((e, i) => 
-    `<label class="employee-item"><input type="checkbox" name="emp" value="${i}" checked> ${e}</label>`
-  ).join('');
-  
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 15px; }
-    .section { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
-    .section-title { font-weight: bold; color: #1c4587; margin-bottom: 10px; }
-    select, input[type="date"] { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
-    .day-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; }
-    .day-checkboxes label { 
-      padding: 8px 12px; background: #e8f0fe; border-radius: 4px; cursor: pointer;
-      border: 2px solid transparent; transition: all 0.2s;
-    }
-    .day-checkboxes label:has(input:checked) { background: #1c4587; color: white; }
-    .day-checkboxes input { display: none; }
-    .employee-list { max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px; }
-    .employee-item { display: block; padding: 3px 0; }
-    .btn-row { display: flex; gap: 10px; margin-top: 10px; }
-    button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-    .btn-primary { background: #1c4587; color: white; }
-    .btn-secondary { background: #f1f3f4; color: #333; }
-    .btn-select { background: #38761d; color: white; font-size: 12px; padding: 5px 10px; }
-  </style>
-</head>
-<body>
-  <div class="section">
-    <div class="section-title">1. Select Shift</div>
-    <select id="shift">${shiftOptions}</select>
-  </div>
-  
-  <div class="section">
-    <div class="section-title">2. Select Days of Week</div>
-    <div class="day-checkboxes">
-      <label><input type="checkbox" name="day" value="1" checked> Mon</label>
-      <label><input type="checkbox" name="day" value="2" checked> Tue</label>
-      <label><input type="checkbox" name="day" value="3" checked> Wed</label>
-      <label><input type="checkbox" name="day" value="4" checked> Thu</label>
-      <label><input type="checkbox" name="day" value="5" checked> Fri</label>
-      <label><input type="checkbox" name="day" value="6"> Sat</label>
-      <label><input type="checkbox" name="day" value="0"> Sun</label>
-    </div>
-    <div class="btn-row" style="margin-top:10px;">
-      <button type="button" class="btn-select" onclick="selectWeekdays()">Weekdays Only</button>
-      <button type="button" class="btn-select" onclick="selectWeekends()">Weekends Only</button>
-      <button type="button" class="btn-select" onclick="selectAll('day')">All Days</button>
-    </div>
-  </div>
-  
-  <div class="section">
-    <div class="section-title">3. Date Range (Optional)</div>
-    <label>Start: <input type="date" id="startDate"></label>
-    <label>End: <input type="date" id="endDate"></label>
-    <p style="font-size: 12px; color: #666;">Leave blank to use entire calendar range.</p>
-  </div>
-  
-  <div class="section">
-    <div class="section-title">4. Select Employees</div>
-    <div class="btn-row">
-      <button type="button" class="btn-select" onclick="selectAll('emp')">Select All</button>
-      <button type="button" class="btn-select" onclick="deselectAll('emp')">Deselect All</button>
-    </div>
-    <div class="employee-list">${employeeCheckboxes}</div>
-  </div>
-  
-  <div class="btn-row">
-    <button class="btn-primary" onclick="apply()">Apply Shifts</button>
-    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
-  </div>
-  
-  <script>
-    function selectWeekdays() {
-      document.querySelectorAll('input[name="day"]').forEach(cb => {
-        cb.checked = ['1','2','3','4','5'].includes(cb.value);
-      });
-    }
-    function selectWeekends() {
-      document.querySelectorAll('input[name="day"]').forEach(cb => {
-        cb.checked = ['0','6'].includes(cb.value);
-      });
-    }
-    function selectAll(name) {
-      document.querySelectorAll('input[name="' + name + '"]').forEach(cb => cb.checked = true);
-    }
-    function deselectAll(name) {
-      document.querySelectorAll('input[name="' + name + '"]').forEach(cb => cb.checked = false);
-    }
-    function apply() {
-      const shift = document.getElementById('shift').value;
-      const days = Array.from(document.querySelectorAll('input[name="day"]:checked')).map(cb => parseInt(cb.value));
-      const empIndices = Array.from(document.querySelectorAll('input[name="emp"]:checked')).map(cb => parseInt(cb.value));
-      const startDate = document.getElementById('startDate').value;
-      const endDate = document.getElementById('endDate').value;
-      
-      if (days.length === 0) { alert('Please select at least one day.'); return; }
-      if (empIndices.length === 0) { alert('Please select at least one employee.'); return; }
-      
-      google.script.run
-        .withSuccessHandler(() => {
-          alert('Shifts assigned successfully!');
-          google.script.host.close();
-        })
-        .withFailureHandler((err) => alert('Error: ' + err.message))
-        .applyBulkShifts(shift, days, empIndices, startDate, endDate);
-    }
-  </script>
-</body>
-</html>`;
-}
-
-/**
- * Server-side function to apply bulk shifts based on user selection.
- * Calendar layout: dates on Y-axis (rows), employees on X-axis (columns).
- */
-function applyBulkShifts(shift, days, empIndices, startDate, endDate) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cal = ss.getSheetByName(CALENDAR_SHEET);
-  const tz = ss.getSpreadsheetTimeZone();
-  
-  // Get dates from column A (rows)
-  const dateColumn = cal.getRange(1, 1, cal.getLastRow(), 1).getValues().flat();
-  
-  // Determine row range for dates
-  let startRow = 2;
-  let endRow = dateColumn.length;
-  
-  if (startDate) {
-    const sd = new Date(startDate);
-    for (let r = 2; r <= dateColumn.length; r++) {
-      const rowDate = new Date(dateColumn[r - 1]);
-      if (rowDate >= sd) { startRow = r; break; }
-    }
-  }
-  if (endDate) {
-    const ed = new Date(endDate);
-    for (let r = dateColumn.length; r >= 2; r--) {
-      const rowDate = new Date(dateColumn[r - 1]);
-      if (rowDate <= ed) { endRow = r; break; }
-    }
-  }
-  
-  // Apply shifts (empIndices refer to column positions: index 0 = column 2, etc.)
-  let count = 0;
-  for (const empIdx of empIndices) {
-    const col = empIdx + 2; // +2 because empIdx is 0-based and column 1 is Date
-    
-    for (let row = startRow; row <= endRow; row++) {
-      const rowDate = new Date(dateColumn[row - 1]);
-      const dayOfWeek = rowDate.getDay();
-      
-      if (days.includes(dayOfWeek)) {
-        const cell = cal.getRange(row, col);
-        const currentVal = cell.getValue();
-        // Append shift if cell already has a value, otherwise set it
-        if (currentVal && currentVal !== "") {
-          const existingShifts = currentVal.toString().split(',').map(s => s.trim());
-          if (!existingShifts.includes(shift)) {
-            cell.setValue(existingShifts.concat(shift).join(', '));
-            count++;
-          }
-        } else {
-          cell.setValue(shift);
-          count++;
-        }
-      }
-    }
-  }
-  
-  return count;
-}
 
 /**
  * Assign shifts to employees by department.
@@ -783,8 +620,8 @@ function applyDepartmentShifts(department, shift, days) {
   const empData = empSheet.getDataRange().getValues().slice(1);
   const deptEmployees = empData.filter(r => r[2] === department).map(r => r[1]);
   
-  // Get calendar employee list from headers (now on X-axis)
-  const headers = cal.getRange(1, 1, 1, cal.getLastColumn()).getValues()[0];
+  // Get calendar employee list from headers (row 2 has employee names)
+  const headers = cal.getRange(2, 1, 1, cal.getLastColumn()).getValues()[0];
   const calEmployees = headers.slice(1);
   const empIndices = [];
   
@@ -798,90 +635,39 @@ function applyDepartmentShifts(department, shift, days) {
     throw new Error('No employees from this department found in the calendar.');
   }
   
-  return applyBulkShifts(shift, days, empIndices, '', '');
-}
-
-/**
- * Copy a week's pattern and repeat it across the calendar.
- * Calendar layout: dates on Y-axis (rows), employees on X-axis (columns).
- */
-function copyWeekPattern() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const cal = ss.getSheetByName(CALENDAR_SHEET);
-  
-  if (!cal || cal.getLastRow() < 2) {
-    ui.alert('Error', 'Please create a calendar first.', ui.ButtonSet.OK);
-    return;
-  }
-  
-  // Get the source week start date
-  const response = ui.prompt(
-    'Copy Week Pattern',
-    'Enter the Monday date of the week to copy (YYYY-MM-DD):',
-    ui.ButtonSet.OK_CANCEL
-  );
-  
-  if (response.getSelectedButton() !== ui.Button.OK) return;
-  
-  const sourceMonday = new Date(response.getResponseText());
-  if (isNaN(sourceMonday.getTime()) || sourceMonday.getDay() !== 1) {
-    ui.alert('Error', 'Please enter a valid Monday date (YYYY-MM-DD).', ui.ButtonSet.OK);
-    return;
-  }
-  
+  // Get dates from column A (starting from row 3)
   const dateColumn = cal.getRange(1, 1, cal.getLastRow(), 1).getValues().flat();
-  const headers = cal.getRange(1, 1, 1, cal.getLastColumn()).getValues()[0];
-  const employees = headers.slice(1);
-  const tz = ss.getSpreadsheetTimeZone();
   
-  // Find source week rows (Monday to Sunday)
-  let sourceStartRow = -1;
-  for (let r = 2; r <= dateColumn.length; r++) {
-    const rowDate = new Date(dateColumn[r - 1]);
-    const rowStr = Utilities.formatDate(rowDate, tz, 'yyyy-MM-dd');
-    const sourceStr = Utilities.formatDate(sourceMonday, tz, 'yyyy-MM-dd');
-    if (rowStr === sourceStr) {
-      sourceStartRow = r;
-      break;
-    }
-  }
-  
-  if (sourceStartRow === -1) {
-    ui.alert('Error', 'Source week not found in the calendar.', ui.ButtonSet.OK);
-    return;
-  }
-  
-  // Read source week data (7 days or less if near end of calendar)
-  const lastRow = cal.getLastRow();
-  const sourceDays = Math.min(7, lastRow - sourceStartRow + 1);
-  const sourceData = cal.getRange(sourceStartRow, 2, sourceDays, employees.length).getValues();
-  
-  // Apply to all other weeks
-  let weeksUpdated = 0;
-  
-  for (let row = 2; row <= lastRow; row++) {
-    const rowDate = new Date(dateColumn[row - 1]);
-    if (rowDate.getDay() === 1 && row !== sourceStartRow) {
-      // This is a Monday - copy the week pattern
-      const targetDays = Math.min(sourceDays, lastRow - row + 1);
-      const targetRange = cal.getRange(row, 2, targetDays, employees.length);
-      const targetData = [];
+  // Apply shifts to selected employees
+  let count = 0;
+  for (const empIdx of empIndices) {
+    const col = empIdx + 2; // +2 because empIdx is 0-based and column 1 is Date
+    
+    for (let row = 3; row <= cal.getLastRow(); row++) {
+      const rowDate = new Date(dateColumn[row - 1]);
+      if (isNaN(rowDate.getTime())) continue;
       
-      for (let day = 0; day < targetDays; day++) {
-        const weekRow = [];
-        for (let emp = 0; emp < employees.length; emp++) {
-          weekRow.push(sourceData[day] ? (sourceData[day][emp] || '') : '');
+      const dayOfWeek = rowDate.getDay();
+      
+      if (days.includes(dayOfWeek)) {
+        const cell = cal.getRange(row, col);
+        const currentVal = cell.getValue();
+        // Append shift if cell already has a value, otherwise set it
+        if (currentVal && currentVal !== "") {
+          const existingShifts = currentVal.toString().split(',').map(s => s.trim());
+          if (!existingShifts.includes(shift)) {
+            cell.setValue(existingShifts.concat(shift).join(', '));
+            count++;
+          }
+        } else {
+          cell.setValue(shift);
+          count++;
         }
-        targetData.push(weekRow);
       }
-      
-      targetRange.setValues(targetData);
-      weeksUpdated++;
     }
   }
   
-  ui.alert('Success', `Copied week pattern to ${weeksUpdated} other weeks.`, ui.ButtonSet.OK);
+  return count;
 }
 
 /**
@@ -909,15 +695,177 @@ function clearCalendar() {
   const lastRow = cal.getLastRow();
   const lastCol = cal.getLastColumn();
   
-  if (lastRow > 1 && lastCol > 1) {
-    // Clear the grid (row 2 onwards, column 2 onwards)
-    cal.getRange(2, 2, lastRow - 1, lastCol - 1).clearContent();
+  if (lastRow > 2 && lastCol > 1) {
+    // Clear the grid (row 3 onwards, column 2 onwards - keeping headers)
+    cal.getRange(3, 2, lastRow - 2, lastCol - 1).clearContent();
     ui.alert('Success', 'Calendar cleared.', ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * Cleanup and beautify all sheets in the workbook.
+ * Removes empty rows/columns, resets formatting, and applies consistent styling.
+ */
+function cleanupSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  
+  const confirm = ui.alert(
+    '🧹 Cleanup Sheet',
+    'This will:\n\n• Remove unused rows and columns\n• Auto-resize columns\n• Apply consistent styling\n• Remove extra whitespace\n\nContinue?',
+    ui.ButtonSet.YES_NO
+  );
+  
+  if (confirm !== ui.Button.YES) return;
+  
+  let cleanedSheets = [];
+  
+  // Clean Planning Calendar
+  const cal = ss.getSheetByName(CALENDAR_SHEET);
+  if (cal) {
+    cleanupCalendarSheet(cal);
+    cleanedSheets.push('Planning Calendar');
+  }
+  
+  // Clean Employee Database
+  const empSheet = ss.getSheetByName(EMPLOYEE_SHEET);
+  if (empSheet) {
+    cleanupDataSheet(empSheet);
+    cleanedSheets.push('Employee Database');
+  }
+  
+  // Clean SQL Output
+  const sqlSheet = ss.getSheetByName(SQL_SHEET);
+  if (sqlSheet) {
+    cleanupDataSheet(sqlSheet);
+    cleanedSheets.push('SQL Output');
+  }
+  
+  // Clean Settings (but don't delete content)
+  const settings = ss.getSheetByName(SETTINGS_SHEET);
+  if (settings) {
+    cleanupSettingsSheet(settings);
+    cleanedSheets.push('Settings');
+  }
+  
+  ui.alert('✅ Cleanup Complete', 
+    `Cleaned ${cleanedSheets.length} sheet(s):\n\n• ${cleanedSheets.join('\n• ')}\n\nAll sheets are now neat and optimized.`,
+    ui.ButtonSet.OK);
+}
+
+/**
+ * Clean up the Planning Calendar sheet specifically.
+ */
+function cleanupCalendarSheet(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return;
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  // Remove extra rows
+  const maxRows = sheet.getMaxRows();
+  if (maxRows > lastRow + 5) {
+    sheet.deleteRows(lastRow + 6, maxRows - lastRow - 5);
+  }
+  
+  // Remove extra columns
+  const maxCols = sheet.getMaxColumns();
+  if (maxCols > lastCol + 2) {
+    sheet.deleteColumns(lastCol + 3, maxCols - lastCol - 2);
+  }
+  
+  // Auto-resize date column
+  sheet.autoResizeColumn(1);
+  
+  // Set consistent column widths for employees
+  if (lastCol > 1) {
+    sheet.setColumnWidths(2, lastCol - 1, 100);
+  }
+  
+  // Ensure grid lines are hidden
+  sheet.setHiddenGridlines(true);
+  
+  // Remove any stray notes
+  sheet.getRange(3, 2, Math.max(1, lastRow - 2), Math.max(1, lastCol - 1)).clearNote();
+  
+  // Re-apply alternating colors for better readability
+  const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  for (let i = 0; i < lastRow - 2; i++) {
+    const rowRange = sheet.getRange(3 + i, 2, 1, lastCol - 1);
+    const dateCell = sheet.getRange(3 + i, 1).getValue();
+    
+    if (dateCell) {
+      const rowDate = new Date(dateCell);
+      const dayOfWeek = rowDate.getDay();
+      
+      // Weekend highlighting
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        sheet.getRange(3 + i, 1, 1, lastCol).setBackground('#fef3c7');
+      } else if (i % 2 === 0) {
+        rowRange.setBackground('#f9fafb');
+      } else {
+        rowRange.setBackground('#ffffff');
+      }
+    }
+  }
+}
+
+/**
+ * Clean up a standard data sheet (Employee Database, SQL Output).
+ */
+function cleanupDataSheet(sheet) {
+  if (!sheet) return;
+  
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  if (lastRow < 1 || lastCol < 1) return;
+  
+  // Remove extra rows
+  const maxRows = sheet.getMaxRows();
+  if (maxRows > lastRow + 10) {
+    sheet.deleteRows(lastRow + 11, maxRows - lastRow - 10);
+  }
+  
+  // Remove extra columns
+  const maxCols = sheet.getMaxColumns();
+  if (maxCols > lastCol + 2) {
+    sheet.deleteColumns(lastCol + 3, maxCols - lastCol - 2);
+  }
+  
+  // Auto-resize all columns
+  for (let c = 1; c <= lastCol; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  
+  // Ensure hidden gridlines
+  sheet.setHiddenGridlines(true);
+}
+
+/**
+ * Clean up the Settings sheet.
+ */
+function cleanupSettingsSheet(sheet) {
+  if (!sheet) return;
+  
+  // Auto-resize visible columns (1-8)
+  for (let c = 1; c <= 8; c++) {
+    sheet.autoResizeColumn(c);
+  }
+  
+  // Ensure hidden gridlines
+  sheet.setHiddenGridlines(true);
+  
+  // Hide any columns beyond H
+  const maxCols = sheet.getMaxColumns();
+  if (maxCols > 8) {
+    sheet.hideColumns(9, maxCols - 8);
   }
 }
 
 // --- 4. PROCESS TO SQL ---
 // Calendar layout: dates on Y-axis (rows), employees on X-axis (columns).
+// Row 1 = Departments, Row 2 = Employee Names, Row 3+ = Data
 function processCalendar() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const cal = ss.getSheetByName(CALENDAR_SHEET);
@@ -951,11 +899,11 @@ function processCalendar() {
   });
 
   const data = cal.getDataRange().getValues();
-  const employeeHeaders = data[0].slice(1); // First row, skip Date column
+  const employeeHeaders = data[1].slice(1); // Second row (index 1), skip Date column
   const output = [];
 
-  // Iterate through rows (dates) and columns (employees)
-  for(let r=1; r<data.length; r++) {
+  // Iterate through rows (dates starting from row 3, index 2) and columns (employees)
+  for(let r=2; r<data.length; r++) {
     const dateStr = data[r][0]; // Date is in column 1 (index 0)
     
     for(let c=1; c<data[r].length; c++) {
