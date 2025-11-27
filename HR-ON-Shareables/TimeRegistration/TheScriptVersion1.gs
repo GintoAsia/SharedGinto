@@ -368,13 +368,14 @@ function addMissingShiftsToSettings(shiftNames) {
   
   // Get existing shifts to avoid duplicates
   const existingShifts = settings.getRange("A35:A100").getValues().flat();
-  const existingShiftSet = new Set(existingShifts.filter(s => s !== "" && s !== null).map(s => s.toString().trim()));
+  const existingShiftSet = new Set(existingShifts.filter(s => s !== "" && s !== null && s !== undefined).map(s => s.toString().trim()));
   
-  // Find the first empty row in the shift definitions area
+  // Find the row after the last non-empty cell in the shift definitions area
   let nextEmptyRow = 35;
-  for (let i = 0; i < existingShifts.length; i++) {
-    if (existingShifts[i] !== "" && existingShifts[i] !== null) {
+  for (let i = existingShifts.length - 1; i >= 0; i--) {
+    if (existingShifts[i] !== "" && existingShifts[i] !== null && existingShifts[i] !== undefined) {
       nextEmptyRow = 35 + i + 1;
+      break;
     }
   }
   
@@ -382,7 +383,7 @@ function addMissingShiftsToSettings(shiftNames) {
   let addedCount = 0;
   for (const shiftName of shiftNames) {
     const trimmedName = shiftName.toString().trim();
-    if (trimmedName && !existingShiftSet.has(trimmedName)) {
+    if (trimmedName.length > 0 && !existingShiftSet.has(trimmedName)) {
       settings.getRange(nextEmptyRow, 1).setValue(trimmedName);
       existingShiftSet.add(trimmedName);
       nextEmptyRow++;
