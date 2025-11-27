@@ -323,7 +323,9 @@ function validateCalendarShifts() {
   } else {
     let report = `Found ${invalidShifts.size} invalid shift type(s) in ${totalInvalidCells} cell(s):\n\n`;
     
+    const missingShiftNames = [];
     invalidShifts.forEach((locations, shiftName) => {
+      missingShiftNames.push(shiftName);
       report += `❌ "${shiftName}" - used ${locations.length} time(s)\n`;
       // Show first 3 locations as examples
       const examples = locations.slice(0, 3);
@@ -336,13 +338,60 @@ function validateCalendarShifts() {
       report += '\n';
     });
     
-    report += `\nPlease define these shifts in the Settings sheet (Shift Definitions table starting at row 35) or correct the entries in the calendar.`;
+    report += `\nWould you like to add these missing shift names to the Settings sheet?`;
     
     // Also highlight the invalid cells
     highlightInvalidShiftCells(cal, invalidShifts);
     
-    ui.alert('⚠️ Validation Failed', report, ui.ButtonSet.OK);
+    // Ask user if they want to add missing shifts
+    const addShiftsResponse = ui.alert('⚠️ Validation Failed', report, ui.ButtonSet.YES_NO);
+    
+    if (addShiftsResponse === ui.Button.YES) {
+      const addedCount = addMissingShiftsToSettings(missingShiftNames);
+      ui.alert('✅ Shifts Added', 
+        `Added ${addedCount} missing shift name(s) to the Settings sheet.\n\nPlease configure their times and types in the Shift Definitions table (starting at row 35).`,
+        ui.ButtonSet.OK);
+    }
   }
+}
+
+/**
+ * Add missing shift names to the Settings sheet in the Shift Definitions area.
+ * Shifts are added to the next available rows starting from row 35 in column A.
+ * @param {string[]} shiftNames - Array of shift names to add
+ * @returns {number} - Number of shifts actually added
+ */
+function addMissingShiftsToSettings(shiftNames) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settings = ss.getSheetByName(SETTINGS_SHEET);
+  if (!settings) return 0;
+  
+  // Get existing shifts to avoid duplicates
+  const existingShifts = settings.getRange("A35:A100").getValues().flat();
+  const existingShiftSet = new Set(existingShifts.filter(s => s !== "" && s !== null && s !== undefined).map(s => s.toString().trim()));
+  
+  // Find the row after the last non-empty cell in the shift definitions area
+  let nextEmptyRow = 35;
+  for (let i = existingShifts.length - 1; i >= 0; i--) {
+    if (existingShifts[i] !== "" && existingShifts[i] !== null && existingShifts[i] !== undefined) {
+      nextEmptyRow = 35 + i + 1;
+      break;
+    }
+  }
+  
+  // Add each missing shift
+  let addedCount = 0;
+  for (const shiftName of shiftNames) {
+    const trimmedName = shiftName.toString().trim();
+    if (trimmedName.length > 0 && !existingShiftSet.has(trimmedName)) {
+      settings.getRange(nextEmptyRow, 1).setValue(trimmedName);
+      existingShiftSet.add(trimmedName);
+      nextEmptyRow++;
+      addedCount++;
+    }
+  }
+  
+  return addedCount;
 }
 
 /**
