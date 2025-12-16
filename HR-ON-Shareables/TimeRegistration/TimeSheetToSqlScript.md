@@ -1,162 +1,141 @@
 ***
 
-# HR-ON Schedule Automation Tool: Setup Guide
+# 📅 HR-ON Schedule Automation Dashboard
 
-This tool automates the process of creating employee schedules in Google Sheets and converting them into SQL queries for the HR-ON database.
+This tool automates the process of scheduling employees, assigning shifts by department or bulk patterns, and converting that data into SQL queries for the HR-ON database.
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have:
 1.  **Google Sheets Access** (Permission to create scripts).
 2.  **HR-ON API Credentials** (Client ID and Client Secret).
-3.  **HR-ON Admin Access** (To find Project/Break IDs manually).
+3.  **Reference IDs** (UUIDs for Presence Types, Break Types, and Projects from HR-ON).
 
 ---
 
-## 🚀 Phase 1: Prepare the Spreadsheet
+## 🚀 Phase 1: Installation & Initialization
 
-1.  Create a **New Google Sheet**.
-2.  Rename the first tab to **`Settings`**.
-3.  Create three more blank tabs and name them **exactly** as follows (Case Sensitive):
-    * `EmployeeData`
-    * `ShiftTemplates`
-    * `Schedule SQL Generator`
+### 1. Install the Script
+1.  Open a new Google Sheet.
+2.  Go to **Extensions > Apps Script**.
+3.  Paste the provided code into the editor (replace any existing code).
+4.  Click **Save** (💾).
+5.  Refresh the Google Sheet tab.
 
----
-
-## ⚙️ Phase 2: Install the Script
-
-1.  In your Google Sheet, go to **Extensions > Apps Script**.
-2.  **Delete** any code currently in the `Code.gs` file.
-3.  **Paste** the "Master Script" provided by your developer.
-4.  Click the **Save** icon (💾).
-5.  **Refresh** your Google Sheet browser tab.
-    * *You should now see a custom menu called **"HR-ON Automation"** at the top.*
+### 2. Run the Initializer
+You will see a new menu called **HR-ON Automation** at the top.
+1.  Click **HR-ON Automation > 🚀 INITIALIZE SHEET (Run First)**.
+2.  Grant the necessary permissions if asked.
+3.  **Result:** The script will automatically create four color-coded sheets and apply professional formatting.
 
 ---
 
-## 🛠 Phase 3: Configuration
+## ⚙️ Phase 2: Configuration (The Settings Sheet)
 
-### 1. Setup API Keys
-Go to the **`Config`** sheet. Enter the following information in **Column A** and **Column B**.
+Go to the **`Settings`** sheet. This is your control center. It is divided into three color-coded blocks:
 
-| Row | Column A (Key) | Column B (Value) |
-| :--- | :--- | :--- |
-| **1** | `CLIENT_ID` | *(Paste your HR-ON Client ID)* |
-| **2** | `CLIENT_SECRET` | *(Paste your HR-ON Client Secret)* |
-| **3** | `TOKEN_URL` | `https://auth.hr-on.com/oauth2/token` |
-| **4** | `USERS_API_URL` | `https://api.hr-on.com/v1/staff/employees?size=1000` |
-| **5** | `DeveloperEmail` | *(Email address where SQL queries should be sent)* |
-| **6** | `DEFAULT_COMPANY_ID` | *(Your Company UUID, e.g., 3f66...)* |
+### 🔵 1. System Configuration (Blue Table)
+Enter your API credentials here.
 
-### 2. Initialize Reference Data
-1.  Click **HR-ON Automation > Step 1: Setup > 1. Create Blank Reference Sheets**.
-2.  This will create 3 new tabs: `Ref_PresenceTypes`, `Ref_BreakTypes`, and `Ref_Projects`.
+| Key | Value |
+| :--- | :--- |
+| **CLIENT_ID** | *(Paste your HR-ON Client ID)* |
+| **CLIENT_SECRET** | *(Paste your HR-ON Client Secret)* |
+| **TOKEN_URL** | `https://auth.hr-on.com/oauth2/token` |
+| **USERS_API_URL** | `https://api.hr-on.com/v1/staff/employees?size=1000` |
 
-### 3. Fill Reference IDs (Manual Step)
-Because these settings are static, you must fill them once manually.
-* **Column A:** The Human Name (e.g., "Lunch", "Math Class").
-* **Column B:** The System UUID (e.g., `cafae750-0827...`).
+### 🟡 2. Reference Data (Yellow Table)
+You must manually paste the names and IDs from HR-ON here. This allows the script to map a human name (e.g., "Lunch") to a database ID.
 
-> **Tip:** You can find these IDs by looking at the URL when editing a project in the HR-ON web portal.
+* **Columns A & B:** Presence Types (e.g., "Normal Work")
+* **Columns C & D:** Break Types (e.g., "Lunch")
+* **Columns E & F:** Projects (e.g., "Math Class")
 
-### 4. Fetch Employees
-1.  Click **HR-ON Automation > Step 1: Setup > 2. Refresh Employee Data**.
-2.  This will pull all current staff into the `EmployeeData` sheet.
+### 🟢 3. Shift Definitions (Green Table)
+Define the shifts you want to use in your calendar.
+
+1.  **Shift Name:** Give it a short code (e.g., "Morning", "Night").
+2.  **Start/End Times:** Format as `HH:mm`.
+3.  **Dropdowns:** Once you fill in the Yellow table, run **Step 1: Data Setup > 2. Refresh Dropdowns**. You can then select Presence, Break, and Projects from the dropdowns in columns F, G, and H.
 
 ---
 
-## 📅 Phase 4: Setup Templates & Calendars
+## 👥 Phase 3: Employee Setup
 
-### 1. Define Your Shifts
-Go to the **`ShiftTemplates`** sheet. Define your shift types (e.g., Morning, Late).
+1.  Click **HR-ON Automation > Step 1: Data Setup > 1. Refresh Employees**.
+2.  The script will pull data from the API.
+3.  Go to the **`Employee_Database`** sheet. You will see your staff list, sorted automatically by **Department**, then by **Name**.
 
-* **Column A (Shift_Name):** Give it a name (e.g., "Morning").
-* **Columns B, E, H:** These will be blank initially.
-* **Columns C, D, F, G, I, J:** Enter the times (Format: `HH:mm:ss`).
+---
 
-### 2. Activate Dropdowns
-1.  Click **HR-ON Automation > Step 1: Setup > 3. Update Template Dropdowns**.
-2.  Go back to **`ShiftTemplates`**. You can now select the Presence, Break, and Project types from the dropdown menus in Columns B, E, and H.
+## 📅 Phase 4: Scheduling Workflow
 
-### 3. Generate the Calendars
+### 1. Create the Calendar
 1.  Click **HR-ON Automation > Step 2: Scheduling > Create/Reset Calendar**.
-2.  Enter the Start and End date for your school year.
-3.  The script will create the `Planning_Calendar` sheet with all employees and dates.
+2.  Enter the Start and End date.
+3.  **Result:** A `Planning_Calendar` sheet is created with Dates on the rows (Y-axis) and Employees on the columns (X-axis).
 
-### 4. Bulk Assign Shifts (NEW - Recommended!)
-Instead of manually clicking each cell, use these powerful bulk assignment tools:
+> **Pro Tip:** For a better visual experience, highlight the calendar grid, go to **Data > Data validation**, and enable **Chip** display style and **Allow multiple selections**.
 
-#### 📅 Bulk Assign Shifts (Pattern-Based)
-1.  Click **HR-ON Automation > Step 2: Scheduling > 📅 Bulk Assign Shifts (Pattern-Based)**.
-2.  A dialog will appear with the following options:
-    * **Select Shift**: Choose from your defined shift types.
-    * **Select Days of Week**: Check/uncheck days (e.g., weekdays only, weekends only).
-    * **Date Range (Optional)**: Limit the assignment to a specific period.
-    * **Select Employees**: Choose which employees to assign.
-3.  Click **Apply Shifts** to bulk-fill the calendar.
+### 2. Assigning Shifts
+You have three ways to schedule:
 
-#### 🏢 Assign Shifts by Department
-1.  Click **HR-ON Automation > Step 2: Scheduling > 🏢 Assign Shifts by Department**.
-2.  Select a department, shift, and days of the week.
-3.  All employees in that department will be assigned the selected shift on the specified days.
+**A. Manual Selection**
+* Click any cell in the grid and select a shift from the dropdown.
 
-#### 📋 Copy Week Pattern
-1.  First, manually set up one week of schedules in the calendar.
-2.  Click **HR-ON Automation > Step 2: Scheduling > 📋 Copy Week Pattern**.
-3.  Enter the Monday date of the week you configured.
-4.  The script will copy that week's pattern to all other weeks in the calendar.
+**B. 📅 Bulk Assign (Pattern-Based)**
+* Click **Step 2: Scheduling > Bulk Assign Shifts**.
+* A popup will appear. Select a Shift, choose Days of the Week (e.g., Mon-Fri), and check the specific employees you want to assign.
+* Click **Apply**.
 
-#### 🗑️ Clear Calendar
-1.  Click **HR-ON Automation > Step 2: Scheduling > 🗑️ Clear Calendar**.
-2.  Confirm to remove all shift assignments (employee names remain).
+**C. 🏢 Assign by Department**
+* Click **Step 2: Scheduling > Assign Shifts by Department**.
+* Select a Department (e.g., "Science Dept") and a Shift.
+* The script will find all employees in that department and assign the shift to them for the selected days.
 
-### ⚠️ Optional: Enable Multi-Select for Manual Edits
-*This step is only needed if you want to manually edit cells with multiple shifts.*
-
-1.  Go to the `Planning_Calendar` sheet.
-2.  **Select the grid area** (from cell B2 down to the end).
-3.  Go to **Data > Data validation**.
-4.  Click the rule on the right sidebar.
-5.  Under **Advanced options**:
-    * Display style: **Chip**.
-    * Check box: **Allow multiple selections**.
-6.  Click **Done**.
+### 3. Copying Patterns
+If you have a perfect week set up:
+1.  Click **Step 2: Scheduling > 📋 Copy Week Pattern**.
+2.  Enter the date of the **Monday** you want to copy.
+3.  The script will replicate that week's schedule across the rest of the calendar.
 
 ---
 
-## ✅ Phase 5: Daily Usage Workflow
+## ✅ Phase 5: Validation & Export
 
-### 1. Plan Schedules (Recommended: Use Bulk Tools)
-* For a year's worth of schedules, use **📅 Bulk Assign Shifts** or **🏢 Assign by Department**.
-* Set up one typical week, then use **📋 Copy Week Pattern** to replicate it.
-* Make individual adjustments as needed by clicking cells directly.
+### 1. Validate Data
+Before exporting, ensure you haven't typed a shift name that doesn't exist in your Settings.
+1.  Click **Step 2: Scheduling > ✅ Validate Calendar Shifts**.
+2.  The script scans every cell.
+3.  If it finds invalid data, it will highlight the bad cells in **Red** and ask if you want to add those shift names to your Settings automatically.
 
-### 2. Process Data
-* When you are ready to finalize, click **HR-ON Automation > Step 3: Export > Process Calendar to SQL**.
-* This reads your visual calendar and converts it into data rows in the `SQL_Output` sheet.
+### 2. Process to SQL
+1.  Click **HR-ON Automation > Step 3: Export > Process Calendar to SQL**.
+2.  The script reads the visual calendar, matches the Shift Names to the IDs in Settings, and generates the data rows.
+3.  Check the **`SQL_Output`** sheet to review the data.
 
-### 3. Send to IT/HR
-* Click **HR-ON Automation > Step 3: Export > Email SQL to IT**.
-* Confirm the email address.
-* The system will convert the data into SQL queries and email them to the developer.
-* The rows in the sheet will be marked as "Sent".
+### 3. Email IT
+1.  Click **HR-ON Automation > Step 3: Export > Email SQL to IT**.
+2.  Enter the recipient address.
+3.  The script formats the data into `INSERT` SQL statements and emails them.
+4.  Rows are marked as "Sent" in the sheet.
 
 ---
 
 ## ❓ Troubleshooting
 
-**Error: "API response was not a list"**
-* Check the `USERS_API_URL` in the Config sheet. It might have a typo.
+| Issue | Solution |
+| :--- | :--- |
+| **"User API URL missing"** | Check the Blue table in the `Settings` sheet. Ensure column names match exactly. |
+| **Dropdowns are empty in Settings** | Run **Step 1 > 2. Refresh Dropdowns** after pasting data into the Yellow table. |
+| **"No employees found"** | Run **Step 1 > 1. Refresh Employees** before creating the calendar. |
+| **Dates are wrong in SQL** | The script auto-converts dates to UTC. Ensure your spreadsheet timezone (File > Settings) is correct. |
 
-**Error: "No calendar found" or "Please create a calendar first"**
-* You haven't run the "Create/Reset Calendar" step yet.
+---
 
-**Dropdowns disappeared in the Calendar**
-* Run **Step 2: Create/Reset Calendar** again. This repairs the data validation links.
+### 🎨 Visual Guide to Sheets
 
-**Bulk assign not working for some employees**
-* Ensure employee names in the calendar match exactly with the Employee_Database sheet.
-
-**Email not sending**
-* Check if you have a `DeveloperEmail` set in the Config sheet, or ensure you typed a valid email in the popup box.
+* 🟦 **Settings:** Configuration & Reference Data.
+* teal **Employee_Database:** Read-only list of staff.
+* 🟨 **Planning_Calendar:** Where you do the work.
+* 🟥 **SQL_Output:** The final data for export.
