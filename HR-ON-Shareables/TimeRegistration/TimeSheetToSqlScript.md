@@ -16,7 +16,7 @@ Before you begin, ensure you have:
 ## 🚀 Phase 1: Prepare the Spreadsheet
 
 1.  Create a **New Google Sheet**.
-2.  Rename the first tab to **`Config`**.
+2.  Rename the first tab to **`Settings`**.
 3.  Create three more blank tabs and name them **exactly** as follows (Case Sensitive):
     * `EmployeeData`
     * `ShiftTemplates`
